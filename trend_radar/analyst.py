@@ -233,10 +233,24 @@ class NewsAnalyst:
 
 
 def _error_message(resp: httpx.Response) -> str:
+    """Best-effort human message from an error body, across provider shapes.
+
+    Z.AI returns {"error": {"message": ...}}; Gemini's OpenAI layer may return that,
+    a bare {"error": "..."}, or a list like [{"error": {...}}]. Fall back to raw text.
+    """
     try:
-        err = resp.json().get("error", {})
-        if isinstance(err, dict) and err.get("message"):
-            return str(err["message"])[:300]
+        body = resp.json()
     except ValueError:
-        pass
-    return resp.text[:300] or "no details"
+        return (resp.text or "").strip()[:300] or "no details"
+
+    if isinstance(body, list):
+        body = body[0] if body else {}
+    if isinstance(body, dict):
+        err = body.get("error", body)
+        if isinstance(err, dict):
+            msg = err.get("message") or err.get("status")
+            if msg:
+                return str(msg)[:300]
+        elif isinstance(err, str) and err:
+            return err[:300]
+    return (resp.text or "").strip()[:300] or "no details"

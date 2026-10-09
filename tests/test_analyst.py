@@ -112,6 +112,19 @@ def test_ask_maps_http_errors(status, match):
         NewsAnalyst(api_key="k", transport=transport).ask("q", _items())
 
 
+@pytest.mark.parametrize("payload", [
+    [{"error": {"message": "bad model", "code": 404}}],   # Gemini sometimes wraps in a list
+    {"error": "flat string error"},
+    {"error": {"status": "RESOURCE_EXHAUSTED"}},
+])
+def test_ask_handles_non_dict_error_bodies(payload):
+    def handler(request):
+        return httpx.Response(400, json=payload)
+    with pytest.raises(AnalystError) as exc:
+        NewsAnalyst(api_key="k", transport=httpx.MockTransport(handler)).ask("q", _items())
+    assert "HTTP 400" in str(exc.value)   # formats instead of crashing on a list/str body
+
+
 def test_ask_flags_truncated_and_filtered_answers():
     transport, _ = _reply("Partial answer", finish="length")
     assert "cut off" in NewsAnalyst(api_key="k", transport=transport).ask("q", _items()).text

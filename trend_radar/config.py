@@ -45,8 +45,8 @@ DEFAULT_CONFIG = {
     "ai": {
         # Question answering. The API key is never stored here — it comes from the
         # provider's env var only (ZAI_API_KEY for zai, GEMINI_API_KEY for gemini).
-        "provider": "zai",           # zai | gemini
-        "model": "",                 # blank = the provider's default model
+        "provider": "gemini",        # zai | gemini
+        "model": "gemini-2.5-flash", # blank = the provider's default model
         "reasoning_effort": "low",   # low | high | max
         "base_url": "",              # blank = the provider's default endpoint (advanced override)
     },
