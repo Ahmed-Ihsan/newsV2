@@ -1281,7 +1281,7 @@ def dedup_cmd(ctx, sources, limit, threshold, output_json):
     radar = _get_radar(ctx)
 
     source_list = sources.split(",") if sources else None
-    snapshot = radar.fetch_all(sources=source_list, limit=limit)
+    snapshot = radar.collect(sources=source_list, limit=limit, save=False)
     items = snapshot.items
 
     engine = DedupEngine(title_threshold=threshold)
@@ -1350,7 +1350,7 @@ def snapshots_cmd(ctx, list_flag, save_flag, diff, auto_diff, label, output_json
     manager = SnapshotManager(radar.store)
 
     if save_flag:
-        snapshot = radar.fetch_all(limit=15)
+        snapshot = radar.collect(limit=15, save=False)
         snap_id = manager.save_snapshot(snapshot, label=label or "manual")
         console.print(f"[bright_green]✓ Snapshot #{snap_id} saved with {len(snapshot.items)} items[/bright_green]")
         return
@@ -1535,7 +1535,7 @@ def obsidian_cmd(ctx, fmt, sources, limit, output_dir, title):
     radar = _get_radar(ctx)
 
     source_list = sources.split(",") if sources else None
-    snapshot = radar.fetch_all(sources=source_list, limit=limit)
+    snapshot = radar.collect(sources=source_list, limit=limit, save=False)
 
     if not output_dir:
         output_dir = "."

@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
 import httpx
+from httpx import HTTPStatusError
 
 from trend_radar.models import IntelItem, SourceType
 from trend_radar.sources import DataSource
@@ -35,7 +36,7 @@ class ArxivSource(DataSource):
         cat = self.CATEGORIES.get(category, category)
         query = f"cat:{cat}"
 
-        url = "http://export.arxiv.org/api/query"
+        url = "https://export.arxiv.org/api/query"
         params = {
             "search_query": query,
             "start": 0,
@@ -45,11 +46,13 @@ class ArxivSource(DataSource):
         }
 
         try:
-            with httpx.Client(timeout=30) as client:
+            with httpx.Client(timeout=30, follow_redirects=True) as client:
                 resp = client.get(url, params=params)
                 resp.raise_for_status()
-        except Exception:
-            return []
+        except HTTPStatusError as e:
+            raise RuntimeError(f"arxiv: HTTP {e.response.status_code} from {url}") from e
+        except Exception as e:
+            raise RuntimeError(f"arxiv: request to {url} failed: {e}") from e
 
         return self._parse_feed(resp.text, limit)
 
@@ -116,7 +119,7 @@ class ArxivSource(DataSource):
 
     def search(self, query: str, limit: int = 25, **kwargs) -> list[IntelItem]:
         """Search arXiv papers."""
-        url = "http://export.arxiv.org/api/query"
+        url = "https://export.arxiv.org/api/query"
         params = {
             "search_query": f"all:{query}",
             "start": 0,
@@ -125,10 +128,12 @@ class ArxivSource(DataSource):
         }
 
         try:
-            with httpx.Client(timeout=30) as client:
+            with httpx.Client(timeout=30, follow_redirects=True) as client:
                 resp = client.get(url, params=params)
                 resp.raise_for_status()
-        except Exception:
-            return []
+        except HTTPStatusError as e:
+            raise RuntimeError(f"arxiv: HTTP {e.response.status_code} from {url}") from e
+        except Exception as e:
+            raise RuntimeError(f"arxiv: request to {url} failed: {e}") from e
 
         return self._parse_feed(resp.text, limit)

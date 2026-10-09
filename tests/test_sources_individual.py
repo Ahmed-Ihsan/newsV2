@@ -94,20 +94,27 @@ class TestRedditSource:
             }
         }
         mock_resp.raise_for_status = MagicMock()
-        mock_httpx.get.return_value = mock_resp
+
+        mock_client = MagicMock()
+        mock_client.get.return_value = mock_resp
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_httpx.Client.return_value = mock_client
         mock_httpx.Timeout.return_value = MagicMock()
 
-        items = src.fetch(limit=5)
+        items = src.fetch(limit=5, subreddits=["MachineLearning"])
         assert isinstance(items, list)
+        assert len(items) == 1
+        assert items[0].title == "Test Reddit Post"
 
     @patch("trend_radar.sources.reddit.httpx")
-    def test_fetch_handles_error(self, mock_httpx):
+    def test_fetch_raises_when_all_endpoints_fail(self, mock_httpx):
         src = self._make_source()
-        mock_httpx.get.side_effect = Exception("Rate limited")
+        mock_httpx.Client.side_effect = Exception("Rate limited")
         mock_httpx.Timeout.return_value = MagicMock()
 
-        items = src.fetch(limit=5)
-        assert items == []
+        with pytest.raises(RuntimeError, match="reddit"):
+            src.fetch(limit=5)
 
 
 class TestArxivSource:
@@ -174,7 +181,7 @@ class TestArxivSource:
         assert items[1].author.startswith("A2")
 
     @patch("trend_radar.sources.arxiv.httpx")
-    def test_fetch_handles_network_error(self, mock_httpx):
+    def test_fetch_raises_on_network_error(self, mock_httpx):
         src = self._make_source()
         mock_client = MagicMock()
         mock_client.get.side_effect = Exception("Network error")
@@ -182,8 +189,8 @@ class TestArxivSource:
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_httpx.Client.return_value = mock_client
 
-        items = src.fetch(limit=5)
-        assert items == []
+        with pytest.raises(RuntimeError, match="arxiv"):
+            src.fetch(limit=5)
 
 
 class TestRSSSource:
@@ -247,7 +254,7 @@ class TestRSSSource:
         assert items[0].title == "Test RSS Item"
 
     @patch("trend_radar.sources.rss.httpx")
-    def test_fetch_handles_error(self, mock_httpx):
+    def test_fetch_raises_when_all_feeds_fail(self, mock_httpx):
         src = self._make_source()
 
         mock_client = MagicMock()
@@ -256,8 +263,8 @@ class TestRSSSource:
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_httpx.Client.return_value = mock_client
 
-        items = src.fetch(limit=5, feed_names=["Hacker News (RSS)"])
-        assert items == []
+        with pytest.raises(RuntimeError, match="rss"):
+            src.fetch(limit=5, feed_names=["Hacker News (RSS)"])
 
 
 class TestGitHubSource:
