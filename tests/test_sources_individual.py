@@ -315,7 +315,7 @@ class TestGitHubSource:
         assert items[0].repo_stars == 5000
 
     @patch("trend_radar.sources.github.httpx")
-    def test_fetch_handles_error(self, mock_httpx):
+    def test_fetch_raises_when_all_paths_fail(self, mock_httpx):
         src = self._make_source()
 
         mock_client = MagicMock()
@@ -324,8 +324,8 @@ class TestGitHubSource:
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_httpx.Client.return_value = mock_client
 
-        items = src.fetch(limit=5)
-        assert items == []
+        with pytest.raises(RuntimeError, match="github"):
+            src.fetch(limit=5)
 
     @patch("trend_radar.sources.github.httpx")
     def test_search(self, mock_httpx):

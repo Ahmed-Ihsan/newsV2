@@ -15,6 +15,7 @@ from click.testing import CliRunner
 from trend_radar.cli import main
 from trend_radar.models import IntelItem, SourceType, TrendSnapshot
 from trend_radar.sources.arxiv import ArxivSource
+from trend_radar.sources.github import GitHubSource
 from trend_radar.sources.producthunt import ProductHuntSource
 from trend_radar.sources.reddit import RedditSource
 from trend_radar.sources.rss import RSSSource
@@ -401,3 +402,138 @@ class TestCliUsesCollect:
             data = json.loads(result.output)
             assert data["total_items"] == 2
             assert data["duplicate_groups"] == 1
+
+
+class TestGitHubTrendingScrape:
+    """fetch() must scrape the trending page first and use the Search API only
+    as a fallback — the Search API's created:>X stars:>N query surfaces
+    fake-star spam."""
+
+    TRENDING_HTML = """<html><body>
+<article class="Box-row">
+  <h2 class="h3 lh-condensed">
+    <a href="/BerriAI/litellm">
+      <svg aria-hidden="true"></svg>
+      BerriAI
+      /
+      litellm
+    </a>
+  </h2>
+  <p class="col-9 color-fg-muted my-1 pr-4">Proxy server to access LLMs</p>
+  <div class="f6 color-fg-muted mt-2">
+    <span itemprop="programmingLanguage">Python</span>
+    <a href="/BerriAI/litellm/stargazers" class="Link--muted d-inline-block mr-3">
+      <svg aria-hidden="true"></svg>
+      25,300
+    </a>
+    <a href="/BerriAI/litellm/forks" class="Link--muted d-inline-block mr-3">2,100</a>
+    <span class="d-inline-block float-sm-right">
+      <svg aria-hidden="true"></svg>
+      1,512 stars today
+    </span>
+  </div>
+</article>
+<article class="Box-row">
+  <h2 class="h3 lh-condensed">
+    <a href="/mattpocock/skills">mattpocock / skills</a>
+  </h2>
+  <p class="col-9 color-fg-muted my-1 pr-4">Offline-first notes app</p>
+  <div class="f6 color-fg-muted mt-2">
+    <a href="/mattpocock/skills/stargazers" class="Link--muted d-inline-block mr-3">980</a>
+  </div>
+</article>
+</body></html>"""
+
+    def _trending_handler(self, calls, trending_html):
+        """Serve the trending page for github.com and Search API JSON for api.github.com."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(request)
+            if request.url.host == "api.github.com":
+                return httpx.Response(200, json={
+                    "items": [{
+                        "full_name": "fallback/repo",
+                        "html_url": "https://github.com/fallback/repo",
+                        "description": "API fallback result",
+                        "stargazers_count": 4321,
+                        "owner": {"login": "fallback"},
+                        "language": "Rust",
+                        "forks_count": 10,
+                    }],
+                })
+            return httpx.Response(200, text=trending_html)
+
+        return handler
+
+    def test_trending_html_parses_into_items(self, monkeypatch):
+        calls = []
+        import trend_radar.sources.github as github_module
+        monkeypatch.setattr(
+            github_module.httpx,
+            "Client",
+            _mock_client_factory(self._trending_handler(calls, self.TRENDING_HTML)),
+        )
+
+        items = GitHubSource().fetch(limit=10)
+
+        assert [i.title for i in items] == ["BerriAI/litellm", "mattpocock/skills"]
+        assert items[0].url == "https://github.com/BerriAI/litellm"
+        assert items[0].source == SourceType.GITHUB
+        # total stars are the score
+        assert items[0].score == 25300
+        assert items[0].repo_stars == 25300
+        assert items[0].description == "Proxy server to access LLMs"
+        assert items[0].repo_language == "Python"
+        assert items[0].author == "BerriAI"
+        # "stars today" badge -> extra["stars_today"]; absent when not shown
+        assert items[0].extra["stars_today"] == 1512
+        assert items[1].score == 980
+        assert items[1].extra["stars_today"] is None
+        assert items[1].repo_language is None
+        # browser-like User-Agent was sent
+        assert "Mozilla/5.0" in calls[0].headers["user-agent"]
+
+    def test_api_not_called_when_scrape_succeeds(self, monkeypatch):
+        calls = []
+        import trend_radar.sources.github as github_module
+        monkeypatch.setattr(
+            github_module.httpx,
+            "Client",
+            _mock_client_factory(self._trending_handler(calls, self.TRENDING_HTML)),
+        )
+
+        GitHubSource().fetch(limit=10)
+
+        assert len(calls) == 1
+        assert calls[0].url.host == "github.com"
+        assert all("api.github.com" not in str(c.url) for c in calls)
+
+    def test_falls_back_to_api_when_scrape_yields_nothing(self, monkeypatch):
+        calls = []
+        empty_page = "<html><body><div>no repos here</div></body></html>"
+        import trend_radar.sources.github as github_module
+        monkeypatch.setattr(
+            github_module.httpx,
+            "Client",
+            _mock_client_factory(self._trending_handler(calls, empty_page)),
+        )
+
+        items = GitHubSource().fetch(limit=5)
+
+        assert len(items) == 1
+        assert items[0].title == "fallback/repo"
+        assert items[0].score == 4321
+        hosts = [c.url.host for c in calls]
+        assert hosts == ["github.com", "api.github.com"]
+
+    def test_raises_when_both_paths_fail(self, monkeypatch):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(500, text="boom")
+
+        import trend_radar.sources.github as github_module
+        monkeypatch.setattr(
+            github_module.httpx, "Client", _mock_client_factory(handler)
+        )
+
+        with pytest.raises(RuntimeError, match="github"):
+            GitHubSource().fetch(limit=5)
