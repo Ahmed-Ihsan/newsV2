@@ -382,6 +382,31 @@ curl http://localhost:8765/api/momentum
 curl http://localhost:8765/api/ranked
 ```
 
+## 🧠 Ask the News (AI analyst)
+
+Ask questions about the items Trend Radar just collected. A Z.AI GLM model answers using only
+those items and cites them by number, so every claim links back to a real story.
+
+```bash
+export ZAI_API_KEY=your-key            # a pay-as-you-go key from your Z.AI account
+trend-radar ask "What's new in AI agents?"
+trend-radar ask "Which repos are trending for Rust?" --sources github
+trend-radar serve                      # then open the Ask view (key 6)
+```
+
+The GLM Coding Plan can't be used for this; Z.AI only allows it inside supported coding tools.
+Change the model or endpoint in `~/.trend-radar/config.yaml`:
+
+```yaml
+ai:
+  base_url: https://api.z.ai/api/paas/v4
+  model: glm-5.3-flash
+  reasoning_effort: low   # low | high | max
+```
+
+API: `POST /api/ask` with `{"question": "...", "sources": "github,hackernews"}`, and
+`GET /api/ask/status` to check whether a key is set.
+
 ## 🐳 Docker
 
 ```bash

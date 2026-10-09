@@ -42,6 +42,12 @@ DEFAULT_CONFIG = {
     "output": {
         "format": "terminal",        # terminal | json | markdown
     },
+    "ai": {
+        # Z.AI pay-as-you-go endpoint. The API key comes from the ZAI_API_KEY env var only.
+        "base_url": "https://api.z.ai/api/paas/v4",
+        "model": "glm-5.3-flash",
+        "reasoning_effort": "low",   # low | high | max (GLM-5.3 always reasons; this sets how hard)
+    },
 }
 
 
@@ -137,6 +143,18 @@ class TrendConfig:
     @property
     def translate_target(self) -> str:
         return self.get("translate.target", "ar")
+
+    @property
+    def ai_base_url(self) -> str:
+        return self.get("ai.base_url", "https://api.z.ai/api/paas/v4")
+
+    @property
+    def ai_model(self) -> str:
+        return self.get("ai.model", "glm-5.3-flash")
+
+    @property
+    def ai_reasoning_effort(self) -> str:
+        return self.get("ai.reasoning_effort", "low")
 
     @property
     def cache_enabled(self) -> bool:

@@ -200,6 +200,46 @@ def search(ctx, query, sources, limit, output_json):
 
 
 @main.command()
+@click.argument("question")
+@click.option("--sources", "-s", default=None, help="Comma-separated sources to analyze (default: all enabled)")
+@click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+@click.pass_context
+def ask(ctx, question, sources, output_json):
+    """Ask an AI analyst (Z.AI GLM) a question about the current trends.
+
+    Needs a Z.AI API key in the ZAI_API_KEY environment variable.
+    """
+    from rich.markdown import Markdown
+    from .analyst import AnalystError, NewsAnalyst
+
+    radar = _get_radar(ctx)
+    console = _get_console(ctx)
+    analyst = NewsAnalyst.from_config(radar.config)
+    source_list = sources.split(",") if sources else None
+
+    try:
+        with console.status("[bold bright_cyan]📡 Collecting trends...[/]"):
+            snapshot = radar.collect(sources=source_list, limit=15, save=False, translate=False)
+        with console.status(f"[bold bright_cyan]🧠 Asking {analyst.model}...[/]"):
+            answer = analyst.ask(question, snapshot.items)
+    except AnalystError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+    if output_json:
+        click.echo(json.dumps(answer.to_dict(), ensure_ascii=False, indent=2))
+        return
+
+    console.print(Panel(Markdown(answer.text), title=f"🧠 {question}", border_style="bright_cyan"))
+    if answer.cited:
+        console.print("[dim]Sources:[/]")
+        for n in answer.cited:
+            item = answer.items[n - 1]
+            console.print(f"  [bold]\\[{n}][/] {item.title} [dim]({item.source.value})[/] {item.url}")
+    console.print(f"[dim]{answer.model}, {len(answer.items)} items analyzed[/]")
+
+
+@main.command()
 @click.option("--hours", "-h", default=24, help="Hours of history", type=int)
 @click.option("--source", "-s", default=None, help="Filter by source")
 @click.option("--limit", "-n", default=30, help="Max items", type=int)
@@ -1106,7 +1146,7 @@ def completions(ctx, shell):
     """
     if shell == "bash":
         click.echo("_trend_radar_completion() {")
-        click.echo("  COMPREPLY=( $(compgen -W 'fetch ai search history keywords stats "
+        click.echo("  COMPREPLY=( $(compgen -W 'fetch ai search ask history keywords stats "
                    "config-show config-set sources-list serve shell diff top health "
                    "alert-add alert-list alert-remove alerts-check momentum opml-import "
                    "ranked live digest init version radar bookmark plugins compare "
@@ -1117,7 +1157,7 @@ def completions(ctx, shell):
     elif shell == "zsh":
         click.echo("#compdef trend-radar tr")
         click.echo("_trend_radar() {")
-        click.echo("  _arguments '1:command:(fetch ai search history keywords stats "
+        click.echo("  _arguments '1:command:(fetch ai search ask history keywords stats "
                    "config-show config-set sources-list serve shell diff top health "
                    "alert-add alert-list alert-remove alerts-check momentum opml-import "
                    "ranked live digest init version radar bookmark plugins compare completions)'")
@@ -1125,7 +1165,7 @@ def completions(ctx, shell):
         click.echo("_trend_radar")
     elif shell == "fish":
         click.echo("complete -c trend-radar -f")
-        cmds = ["fetch", "ai", "search", "history", "keywords", "stats",
+        cmds = ["fetch", "ai", "search", "ask", "history", "keywords", "stats",
                 "config-show", "config-set", "sources-list", "serve", "shell",
                 "diff", "top", "health", "alert-add", "alert-list", "alert-remove",
                 "alerts-check", "momentum", "opml-import", "ranked", "live",

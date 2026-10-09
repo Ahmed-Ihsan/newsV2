@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 try:
-    from fastapi import FastAPI, Query
+    from fastapi import Body, FastAPI, Query
     from fastapi.responses import HTMLResponse, JSONResponse
     HAS_FASTAPI = True
 except ImportError:
@@ -162,6 +162,33 @@ def create_app(radar=None, host: str = "127.0.0.1", port: int = 8765) -> "FastAP
             "items": [i.to_dict() for i in ranked_items],
         })
 
+    @app.get("/api/ask/status")
+    async def api_ask_status():
+        """Whether question answering is set up, and which model it uses."""
+        from .analyst import NewsAnalyst, API_KEY_ENV
+        analyst = NewsAnalyst.from_config(_radar.config)
+        return JSONResponse({"configured": analyst.configured, "model": analyst.model, "key_env": API_KEY_ENV})
+
+    @app.post("/api/ask")
+    def api_ask(payload: dict = Body(...)):
+        """Answer a question about the current trends with a GLM model.
+
+        Body: {"question": str, "sources": optional comma-separated source names}.
+        Plain `def` so the slow model call runs in FastAPI's thread pool.
+        """
+        from .analyst import AnalystError, NewsAnalyst
+        question = str(payload.get("question") or "")[:2000]
+        sources = payload.get("sources") or None
+        source_list = sources.split(",") if isinstance(sources, str) and sources else None
+        analyst = NewsAnalyst.from_config(_radar.config)
+        try:
+            snapshot = _radar.collect(sources=source_list, limit=15, save=False, translate=False)
+            answer = analyst.ask(question, snapshot.items)
+        except AnalystError as e:
+            status = 503 if not analyst.configured else 400
+            return JSONResponse({"error": str(e)}, status_code=status)
+        return JSONResponse(answer.to_dict())
+
     @app.get("/api/alerts")
     async def api_alerts_list():
         """List all configured alerts."""
@@ -266,7 +293,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 a { color: inherit; }
-button, input, select { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
 
 /* ---- Shell ---- */
@@ -409,6 +436,40 @@ body.is-loading .scope .arm { animation: sweep 1.1s linear infinite; }
 .empty p { margin: 0; color: var(--ink-2); }
 .empty code { font-stretch: 75%; font-weight: 650; color: var(--ink); background: var(--strip); padding: 1px 6px; border-radius: 2px; border: 1px solid var(--rule); }
 
+/* ---- Ask ---- */
+.ask-form { margin: 28px 0 0; display: flex; flex-direction: column; gap: 10px; max-width: 760px; }
+.ask-form label { font-weight: 650; font-size: 15px; }
+.ask-form textarea {
+  width: 100%; min-height: 88px; resize: vertical; padding: 12px 14px; line-height: 1.5;
+  background: var(--strip); border: 1px solid var(--rule); border-radius: 3px;
+}
+.ask-form textarea::placeholder { color: var(--ink-3); }
+.ask-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ask-row small { color: var(--ink-3); font-size: 13px; }
+.ask-btn { padding: 10px 20px; background: var(--ink); color: var(--paper); border: 1px solid var(--ink); border-radius: 3px; cursor: pointer; font-weight: 650; }
+.ask-btn:hover { background: var(--ink-2); border-color: var(--ink-2); }
+.ask-btn:disabled { opacity: .55; cursor: progress; }
+.suggest { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.suggest button { padding: 6px 12px; border: 1px solid var(--rule); background: transparent; border-radius: 3px; cursor: pointer; font-size: 14px; color: var(--ink-2); text-align: left; }
+.suggest button:hover { border-color: var(--ink-3); color: var(--ink); }
+.qa { margin: 36px 0 0; padding-top: 20px; border-top: 2px solid var(--ink); max-width: 760px; }
+.qa + .qa { border-top-width: 1px; border-top-color: var(--rule); }
+.qa-q { margin: 0; font-stretch: 112%; font-weight: 750; font-size: 21px; line-height: 1.3; letter-spacing: -0.01em; }
+.qa-meta { margin: 4px 0 0; font-size: 13px; color: var(--ink-3); }
+.answer { margin-top: 16px; font-size: 17px; line-height: 1.65; max-width: 68ch; }
+.answer p { margin: 0 0 14px; }
+.answer ul { margin: 0 0 14px; padding-left: 22px; }
+.answer li { margin-bottom: 6px; }
+.cite {
+  display: inline-block; min-width: 1.6em; padding: 0 5px; margin: 0 1px; border-radius: 2px;
+  background: var(--signal-soft); color: var(--ink); font-stretch: 75%; font-weight: 700; font-size: 13px;
+  line-height: 1.5; text-align: center; text-decoration: none; vertical-align: 1px;
+}
+.cite:hover { background: var(--signal); color: var(--strip); }
+.qa .board-head { margin-top: 20px; }
+.strip.flash { border-color: var(--signal); box-shadow: 0 0 0 1px var(--signal); }
+.qa-pending { margin-top: 16px; color: var(--ink-2); }
+
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ---- Narrow screens ---- */
@@ -462,13 +523,14 @@ body.is-loading .scope .arm { animation: sweep 1.1s linear infinite; }
         <li><button class="view-btn" id="btnKW" type="button" onclick="showKeywords()">Keywords <kbd>3</kbd></button></li>
         <li><button class="view-btn" id="btnStats" type="button" onclick="showStats()">Stats <kbd>4</kbd></button></li>
         <li><button class="view-btn" id="btnDiff" type="button" onclick="showDiff()">Diff <kbd>5</kbd></button></li>
+        <li><button class="view-btn" id="btnAsk" type="button" onclick="showAsk()">Ask <kbd>6</kbd></button></li>
       </ul>
     </nav>
 
     <div class="rail-settings">
       <div class="rail-group">
         <label class="rail-label" for="sourceSelect">Source</label>
-        <select id="sourceSelect" onchange="fetchAll()">
+        <select id="sourceSelect" onchange="onSourceChange()">
           <option value="">All sources</option>
           <option value="github">GitHub</option>
           <option value="hackernews">Hacker News</option>
@@ -567,6 +629,8 @@ async function load(url, action) {
     return null;
   }
 }
+
+function onSourceChange() { if ($('btnAsk').getAttribute('aria-current') === 'true') renderAsk(); else fetchAll(); }
 
 function showErrors(errors) {
   if (!errors || !errors.length) return;
@@ -745,12 +809,114 @@ async function doSearch() {
   renderItems(data.items, 'Results for “' + q + '”', null);
 }
 
+/* ---- Ask ---- */
+let askHistory = [], askCounter = 0, askState = null;
+const SUGGESTIONS = ['What are the biggest stories right now?', 'What is new in AI agents and coding tools?', 'Which topics show up across several sources?'];
+
+function answerHtml(text, qid, itemCount) {
+  const inline = t => esc(t)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\[(\d{1,4})\]/g, (m, n) => (+n >= 1 && +n <= itemCount)
+      ? '<a class="cite" href="#' + qid + '-' + n + '" onclick="return flashCite(this)" aria-label="Source ' + n + '">' + n + '</a>' : m);
+  const out = []; let list = null, para = [];
+  const flush = () => { if (para.length) { out.push('<p dir="auto">' + inline(para.join(' ')) + '</p>'); para = []; } };
+  text.split('\n').forEach(line => {
+    const t = line.trim();
+    const bullet = t.match(/^(?:[-*•]|\d+[.)])\s+(.*)$/);
+    if (bullet) { flush(); if (!list) { list = []; } list.push('<li dir="auto">' + inline(bullet[1]) + '</li>'); return; }
+    if (list) { out.push('<ul>' + list.join('') + '</ul>'); list = null; }
+    if (!t) { flush(); return; }
+    para.push(t.replace(/^#+\s*/, ''));
+  });
+  flush(); if (list) out.push('<ul>' + list.join('') + '</ul>');
+  return out.join('');
+}
+
+function flashCite(a) {
+  const el = document.getElementById(a.getAttribute('href').slice(1));
+  if (!el) return false;
+  el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
+  el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600);
+  return false;
+}
+
+function qaHtml(entry) {
+  const head = '<h2 class="qa-q" dir="auto">' + esc(entry.question) + '</h2>';
+  if (entry.pending) return '<section class="qa">' + head + '<p class="qa-pending">Reading the latest items and writing an answer. This usually takes 10–40 seconds.</p></section>';
+  if (entry.error) return '<section class="qa">' + head + '<div class="notice"><strong>No answer.</strong> ' + esc(entry.error) + '</div></section>';
+  const d = entry.data, qid = 'q' + entry.id;
+  const maxBySource = {};
+  d.items.forEach(i => { maxBySource[i.source] = Math.max(maxBySource[i.source] || 0, Number(i.score) || 0); });
+  let html = '<section class="qa">' + head +
+    '<p class="qa-meta">Answered by ' + esc(d.model) + ' from ' + d.items.length + ' collected items</p>' +
+    '<div class="answer">' + answerHtml(d.answer, qid, d.items.length) + '</div>';
+  if (d.cited.length) {
+    html += '<div class="board-head"><h2>Sources cited</h2><p>Numbers match the citations above.</p></div><ol class="strips">' +
+      d.cited.map((n, i) => stripHtml(d.items[n - 1], n - 1, maxBySource, i).replace('<li class="strip"', '<li class="strip" id="' + qid + '-' + n + '"')).join('') + '</ol>';
+  }
+  return html + '</section>';
+}
+
+function renderAsk() {
+  if (!askState) return;
+  if (!askState.configured) {
+    $('results').innerHTML = emptyState('Connect a Z.AI API key to ask questions',
+      'Create a pay-as-you-go key in your Z.AI account, then restart the server with it: <code>ZAI_API_KEY=your-key trend-radar serve</code>. ' +
+      'The GLM Coding Plan can’t be used here; Z.AI only allows it inside supported coding tools.');
+    return;
+  }
+  const src = $('sourceSelect').value;
+  $('results').innerHTML =
+    '<form class="ask-form" onsubmit="event.preventDefault(); doAsk();">' +
+      '<label for="askInput">Ask about ' + (src ? 'the latest from ' + esc(srcName(src)) : 'the latest news from all sources') + '</label>' +
+      '<textarea id="askInput" dir="auto" placeholder="For example: what changed in open-source LLMs this week?" onkeydown="if(event.key===\'Enter\'&&(event.metaKey||event.ctrlKey)){event.preventDefault();doAsk();}"></textarea>' +
+      '<div class="ask-row"><small>Answers use only the collected items and cite them. Ctrl+Enter to send.</small>' +
+      '<button class="ask-btn" id="askBtn" type="submit">Ask</button></div>' +
+      (askHistory.length ? '' : '<div class="suggest">' + SUGGESTIONS.map(q => '<button type="button" onclick="askSuggested(this)">' + esc(q) + '</button>').join('') + '</div>') +
+    '</form>' + askHistory.map(qaHtml).join('');
+}
+
+async function showAsk() {
+  setView('Ask the news', 'btnAsk'); clearCharts(); $('notice').innerHTML = '';
+  if (!askState) {
+    showLoading('Checking the AI connection…');
+    const st = await load('/api/ask/status', showAsk);
+    if (!st) return; hideLoading(); askState = st;
+  }
+  setStatus(askState.configured ? 'Answers by ' + askState.model + ', grounded in the items Trend Radar collects' : '');
+  renderAsk();
+  const box = $('askInput'); if (box) box.focus();
+}
+
+function askSuggested(btn) { $('askInput').value = btn.textContent; doAsk(); }
+
+async function doAsk() {
+  const box = $('askInput'); const q = box ? box.value.trim() : '';
+  if (!q) { if (box) box.focus(); return; }
+  const entry = { id: ++askCounter, question: q, pending: true };
+  askHistory.unshift(entry); renderAsk();
+  $('askBtn').disabled = true; document.body.classList.add('is-loading');
+  setStatus('Asking ' + askState.model + '…');
+  try {
+    const src = $('sourceSelect').value;
+    const resp = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, sources: src || null }) });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) entry.error = data.error || ('The server answered ' + resp.status + '.');
+    else entry.data = data;
+  } catch (err) {
+    entry.error = 'Couldn’t reach the Trend Radar server. Check that it is still running.';
+  }
+  entry.pending = false; document.body.classList.remove('is-loading');
+  setStatus('Answers by ' + askState.model + ', grounded in the items Trend Radar collects');
+  if ($('btnAsk').getAttribute('aria-current') === 'true') { renderAsk(); }
+}
+
 /* ---- Keyboard ---- */
 document.addEventListener('keydown', e => {
   const t = e.target;
   if (t.matches('input, select, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === '/') { e.preventDefault(); $('searchInput').focus(); return; }
-  const views = { '1': fetchAll, '2': fetchAI, '3': showKeywords, '4': showStats, '5': showDiff };
+  const views = { '1': fetchAll, '2': fetchAI, '3': showKeywords, '4': showStats, '5': showDiff, '6': showAsk };
   if (views[e.key]) views[e.key]();
 });
 
