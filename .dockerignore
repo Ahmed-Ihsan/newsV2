@@ -1,0 +1,16 @@
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.git
+.gitignore
+.pytest_cache
+.ruff_cache
+*.db
+*.sqlite
+.trend-radar-history
+tests/
+docs/
+EVAL.md
+CHANGELOG.md
+CONTRIBUTING.md

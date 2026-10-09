@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trend-radar"
+version = "1.0.0"
+description = "Multi-source tech intelligence CLI — GitHub/HN/Reddit/arXiv/RSS/Product Hunt trend tracking with live dashboard, web UI, and interactive shell"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "rich>=13.0",
+    "click>=8.0",
+    "httpx>=0.25",
+    "beautifulsoup4>=4.12",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+web = ["fastapi>=0.100", "uvicorn>=0.20"]
+shell = ["prompt-toolkit>=3.0"]
+hermes = ["hermes-agent"]
+dev = ["pytest>=7.0", "pytest-asyncio", "pytest-cov", "ruff"]
+all = ["fastapi>=0.100", "uvicorn>=0.20", "prompt-toolkit>=3.0"]
+
+[project.scripts]
+trend-radar = "trend_radar.cli:main"
+tr = "trend_radar.cli:main"
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: Tests that hit live API endpoints (deselect with '-m \"not integration\"')",
+]
