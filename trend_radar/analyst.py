@@ -31,15 +31,15 @@ PROVIDERS = {
         "label": "Gemini",
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
         "key_env": "GEMINI_API_KEY",
-        "model": "gemini-2.5-flash",
+        "model": "models/gemini-3.8-flash",
         "thinking": False,
         "key_help": "a key from Google AI Studio (aistudio.google.com/apikey)",
     },
 }
 
-DEFAULT_PROVIDER = "zai"
+DEFAULT_PROVIDER = "gemini"
 DEFAULT_EFFORT = "low"
-API_KEY_ENV = "ZAI_API_KEY"  # kept for backward compatibility with older imports
+API_KEY_ENV = "GEMINI_API_KEY"  # kept for backward compatibility with older imports
 
 MAX_ITEMS = 150          # keep the prompt bounded
 DESC_CHARS = 280         # per-item description budget

@@ -409,7 +409,7 @@ Choose the provider and model in `~/.trend-radar/config.yaml`:
 ```yaml
 ai:
   provider: gemini          # zai | gemini
-  model: gemini-2.5-flash   # blank = the provider's default (glm-5.3-flash / gemini-2.5-flash)
+  model: models/gemini-3.8-flash   # blank = the provider's default (glm-5.3-flash / models/gemini-3.8-flash)
   reasoning_effort: low     # low | high | max
   # base_url: ""            # blank = the provider's default endpoint
 ```

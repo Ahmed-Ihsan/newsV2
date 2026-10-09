@@ -46,7 +46,7 @@ DEFAULT_CONFIG = {
         # Question answering. The API key is never stored here — it comes from the
         # provider's env var only (ZAI_API_KEY for zai, GEMINI_API_KEY for gemini).
         "provider": "gemini",        # zai | gemini
-        "model": "gemini-2.5-flash", # blank = the provider's default model
+        "model": "models/gemini-3.8-flash",  # blank = the provider's default model
         "reasoning_effort": "low",   # low | high | max
         "base_url": "",              # blank = the provider's default endpoint (advanced override)
     },
@@ -148,7 +148,7 @@ class TrendConfig:
 
     @property
     def ai_provider(self) -> str:
-        return self.get("ai.provider", "zai")
+        return self.get("ai.provider", "gemini")
 
     @property
     def ai_base_url(self) -> str:

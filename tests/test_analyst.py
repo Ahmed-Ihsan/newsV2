@@ -56,7 +56,8 @@ def test_extract_citations_dedupes_and_bounds():
 
 def test_ask_sends_question_and_parses_answer():
     transport, captured = _reply("Claude Code leads on GitHub [1], with a vector DB on HN [2].")
-    analyst = NewsAnalyst(api_key="k", base_url="https://api.z.ai/api/paas/v4/", model="glm-5.3", transport=transport)
+    analyst = NewsAnalyst(provider="zai", api_key="k", base_url="https://api.z.ai/api/paas/v4/",
+                          model="glm-5.3", transport=transport)
     answer = analyst.ask("What's big?", _items())
 
     assert captured["url"] == "https://api.z.ai/api/paas/v4/chat/completions"
@@ -76,7 +77,7 @@ def test_gemini_provider_uses_openai_endpoint_without_thinking(monkeypatch):
     transport, captured = _reply("From Gemini [1].", model="gemini-2.5-flash")
     analyst = NewsAnalyst(provider="gemini", api_key="g", transport=transport)
     assert analyst.key_env == "GEMINI_API_KEY"
-    assert analyst.model == "gemini-2.5-flash"
+    assert analyst.model == "models/gemini-3.8-flash"
     analyst.ask("q", _items())
     assert captured["url"] == "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
     assert captured["auth"] == "Bearer g"
@@ -91,18 +92,19 @@ def test_gemini_missing_key_names_gemini_env(monkeypatch):
 
 
 def test_unknown_provider_falls_back_to_default():
-    assert NewsAnalyst(provider="nope").key_env == "ZAI_API_KEY"
+    # default provider is gemini
+    assert NewsAnalyst(provider="nope").key_env == "GEMINI_API_KEY"
 
 
 def test_ask_without_key_explains_setup(monkeypatch):
     monkeypatch.delenv("ZAI_API_KEY", raising=False)
     with pytest.raises(AnalystError, match="ZAI_API_KEY"):
-        NewsAnalyst().ask("q", _items())
+        NewsAnalyst(provider="zai").ask("q", _items())
 
 
 def test_ask_reads_key_from_env(monkeypatch):
-    monkeypatch.setenv("ZAI_API_KEY", "env-key")
-    assert NewsAnalyst().configured
+    monkeypatch.setenv("GEMINI_API_KEY", "env-key")
+    assert NewsAnalyst().configured  # default provider reads its own env var
 
 
 @pytest.mark.parametrize("status,match", [(401, "rejected the API key"), (429, r"HTTP 429\): nope"), (500, "HTTP 500: nope")])
