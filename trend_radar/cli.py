@@ -205,9 +205,10 @@ def search(ctx, query, sources, limit, output_json):
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.pass_context
 def ask(ctx, question, sources, output_json):
-    """Ask an AI analyst (Z.AI GLM) a question about the current trends.
+    """Ask an AI analyst a question about the current trends.
 
-    Needs a Z.AI API key in the ZAI_API_KEY environment variable.
+    Uses the provider set in config (zai or gemini). Needs that provider's API key
+    in its environment variable: ZAI_API_KEY for Z.AI, or GEMINI_API_KEY for Gemini.
     """
     from rich.markdown import Markdown
     from .analyst import AnalystError, NewsAnalyst

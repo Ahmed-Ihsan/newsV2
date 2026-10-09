@@ -43,10 +43,12 @@ DEFAULT_CONFIG = {
         "format": "terminal",        # terminal | json | markdown
     },
     "ai": {
-        # Z.AI pay-as-you-go endpoint. The API key comes from the ZAI_API_KEY env var only.
-        "base_url": "https://api.z.ai/api/paas/v4",
-        "model": "glm-5.3-flash",
-        "reasoning_effort": "low",   # low | high | max (GLM-5.3 always reasons; this sets how hard)
+        # Question answering. The API key is never stored here — it comes from the
+        # provider's env var only (ZAI_API_KEY for zai, GEMINI_API_KEY for gemini).
+        "provider": "zai",           # zai | gemini
+        "model": "",                 # blank = the provider's default model
+        "reasoning_effort": "low",   # low | high | max
+        "base_url": "",              # blank = the provider's default endpoint (advanced override)
     },
 }
 
@@ -145,12 +147,16 @@ class TrendConfig:
         return self.get("translate.target", "ar")
 
     @property
+    def ai_provider(self) -> str:
+        return self.get("ai.provider", "zai")
+
+    @property
     def ai_base_url(self) -> str:
-        return self.get("ai.base_url", "https://api.z.ai/api/paas/v4")
+        return self.get("ai.base_url", "")
 
     @property
     def ai_model(self) -> str:
-        return self.get("ai.model", "glm-5.3-flash")
+        return self.get("ai.model", "")
 
     @property
     def ai_reasoning_effort(self) -> str:

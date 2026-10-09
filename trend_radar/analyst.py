@@ -1,8 +1,9 @@
-"""Ask questions about the current news — answered by a Z.AI GLM model.
+"""Ask questions about the current news — answered by an AI model.
 
 The model only sees the items Trend Radar collected, numbered [1]..[n], and is told to
-answer from them alone and cite the items it used. Uses Z.AI's pay-as-you-go
-OpenAI-style chat endpoint; the API key is read from the ZAI_API_KEY environment variable.
+answer from them alone and cite the items it used. Talks to any provider with an
+OpenAI-style /chat/completions endpoint (Z.AI GLM or Google Gemini). The API key is
+never stored in code or config — it is read from the provider's environment variable.
 """
 
 import os
@@ -14,10 +15,31 @@ import httpx
 
 from .models import IntelItem
 
-DEFAULT_BASE_URL = "https://api.z.ai/api/paas/v4"
-DEFAULT_MODEL = "glm-5.3-flash"
+# Each provider exposes an OpenAI-compatible /chat/completions endpoint with Bearer auth.
+# `thinking` is a Z.AI extension; Gemini's OpenAI layer rejects unknown fields, so it is
+# sent only where the provider supports it. Both accept `reasoning_effort`.
+PROVIDERS = {
+    "zai": {
+        "label": "Z.AI",
+        "base_url": "https://api.z.ai/api/paas/v4",
+        "key_env": "ZAI_API_KEY",
+        "model": "glm-5.3-flash",
+        "thinking": True,
+        "key_help": "a pay-as-you-go key from your Z.AI account (the GLM Coding Plan key won't work here)",
+    },
+    "gemini": {
+        "label": "Gemini",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "key_env": "GEMINI_API_KEY",
+        "model": "gemini-2.5-flash",
+        "thinking": False,
+        "key_help": "a key from Google AI Studio (aistudio.google.com/apikey)",
+    },
+}
+
+DEFAULT_PROVIDER = "zai"
 DEFAULT_EFFORT = "low"
-API_KEY_ENV = "ZAI_API_KEY"
+API_KEY_ENV = "ZAI_API_KEY"  # kept for backward compatibility with older imports
 
 MAX_ITEMS = 150          # keep the prompt bounded
 DESC_CHARS = 280         # per-item description budget
@@ -96,26 +118,42 @@ def extract_citations(text: str, item_count: int) -> list[int]:
 
 
 class NewsAnalyst:
-    """Answer questions about a set of collected items using a GLM model."""
+    """Answer questions about a set of collected items using an AI model.
+
+    `provider` picks the defaults (endpoint, model, key env var); any of them can be
+    overridden. The key is read from the provider's env var unless passed explicitly.
+    """
 
     def __init__(
         self,
+        provider: Optional[str] = None,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         model: Optional[str] = None,
         reasoning_effort: Optional[str] = None,
         transport: Optional[httpx.BaseTransport] = None,
     ):
-        self.api_key = api_key if api_key is not None else os.environ.get(API_KEY_ENV, "")
-        self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
-        self.model = model or DEFAULT_MODEL
+        self.provider = (provider or DEFAULT_PROVIDER).strip().lower()
+        spec = PROVIDERS.get(self.provider, PROVIDERS[DEFAULT_PROVIDER])
+        self.label = spec["label"]
+        self.key_env = spec["key_env"]
+        self.key_help = spec["key_help"]
+        self._send_thinking = spec["thinking"]
+        self.api_key = api_key if api_key is not None else os.environ.get(self.key_env, "")
+        self.base_url = (base_url or spec["base_url"]).rstrip("/")
+        self.model = model or spec["model"]
         self.reasoning_effort = reasoning_effort or DEFAULT_EFFORT
         self._transport = transport
 
     @classmethod
     def from_config(cls, config, **kwargs) -> "NewsAnalyst":
-        return cls(base_url=config.ai_base_url, model=config.ai_model,
-                   reasoning_effort=config.ai_reasoning_effort, **kwargs)
+        return cls(
+            provider=getattr(config, "ai_provider", DEFAULT_PROVIDER),
+            base_url=getattr(config, "ai_base_url", "") or None,
+            model=getattr(config, "ai_model", "") or None,
+            reasoning_effort=getattr(config, "ai_reasoning_effort", DEFAULT_EFFORT),
+            **kwargs,
+        )
 
     @property
     def configured(self) -> bool:
@@ -127,7 +165,7 @@ class NewsAnalyst:
             raise AnalystError("Type a question first.")
         if not self.api_key:
             raise AnalystError(
-                f"No Z.AI API key found. Set {API_KEY_ENV} in the environment that runs "
+                f"No {self.label} API key found. Set {self.key_env} in the environment that runs "
                 "Trend Radar, then restart it."
             )
         if not items:
@@ -141,45 +179,45 @@ class NewsAnalyst:
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
-            "thinking": {"type": "enabled"},
             "reasoning_effort": self.reasoning_effort,
             "max_tokens": 4096,
             "temperature": 0.3,
             "stream": False,
         }
+        if self._send_thinking:
+            body["thinking"] = {"type": "enabled"}
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
 
         try:
             with httpx.Client(timeout=TIMEOUT_SECONDS, transport=self._transport) as client:
                 resp = client.post(f"{self.base_url}/chat/completions", json=body, headers=headers)
         except httpx.TimeoutException:
-            raise AnalystError("Z.AI took too long to answer. Try again, or ask a narrower question.")
+            raise AnalystError(f"{self.label} took too long to answer. Try again, or ask a narrower question.")
         except httpx.HTTPError as e:
-            raise AnalystError(f"Couldn't reach Z.AI ({e.__class__.__name__}). Check your connection.")
+            raise AnalystError(f"Couldn't reach {self.label} ({e.__class__.__name__}). Check your connection.")
 
         if resp.status_code in (401, 403):
-            raise AnalystError(f"Z.AI rejected the API key (HTTP {resp.status_code}). Check {API_KEY_ENV}.")
+            raise AnalystError(f"{self.label} rejected the API key (HTTP {resp.status_code}). Check {self.key_env}.")
         if resp.status_code == 429:
             raise AnalystError(
-                f"Z.AI refused the request (HTTP 429): {_error_message(resp)}. This means either too many "
-                f"requests (wait a minute) or no balance on a pay-as-you-go key (check billing at z.ai). "
-                f"A Coding Plan key won't work here."
+                f"{self.label} refused the request (HTTP 429): {_error_message(resp)}. You're either sending "
+                f"too many requests (wait a minute) or out of quota/balance — check your {self.label} account."
             )
         if resp.status_code >= 400:
-            raise AnalystError(f"Z.AI returned HTTP {resp.status_code}: {_error_message(resp)}")
+            raise AnalystError(f"{self.label} returned HTTP {resp.status_code}: {_error_message(resp)}")
 
         try:
             data = resp.json()
             choice = data["choices"][0]
             text = (choice["message"].get("content") or "").strip()
         except (ValueError, KeyError, IndexError, TypeError):
-            raise AnalystError("Z.AI sent a response Trend Radar couldn't read.")
+            raise AnalystError(f"{self.label} sent a response Trend Radar couldn't read.")
 
         finish = choice.get("finish_reason")
-        if finish == "sensitive":
-            raise AnalystError("Z.AI declined to answer this question (content filter).")
+        if finish in ("sensitive", "content_filter"):
+            raise AnalystError(f"{self.label} declined to answer this question (content filter).")
         if not text:
-            raise AnalystError("Z.AI returned an empty answer. Try rephrasing the question.")
+            raise AnalystError(f"{self.label} returned an empty answer. Try rephrasing the question.")
         if finish == "length":
             text += "\n\n(The answer was cut off at the length limit.)"
 

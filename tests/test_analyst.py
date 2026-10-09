@@ -71,6 +71,29 @@ def test_ask_sends_question_and_parses_answer():
     assert answer.usage["total_tokens"] == 120
 
 
+def test_gemini_provider_uses_openai_endpoint_without_thinking(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    transport, captured = _reply("From Gemini [1].", model="gemini-2.5-flash")
+    analyst = NewsAnalyst(provider="gemini", api_key="g", transport=transport)
+    assert analyst.key_env == "GEMINI_API_KEY"
+    assert analyst.model == "gemini-2.5-flash"
+    analyst.ask("q", _items())
+    assert captured["url"] == "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+    assert captured["auth"] == "Bearer g"
+    assert "thinking" not in captured["body"]           # Gemini rejects unknown fields
+    assert captured["body"]["reasoning_effort"] == "low"
+
+
+def test_gemini_missing_key_names_gemini_env(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    with pytest.raises(AnalystError, match="GEMINI_API_KEY"):
+        NewsAnalyst(provider="gemini").ask("q", _items())
+
+
+def test_unknown_provider_falls_back_to_default():
+    assert NewsAnalyst(provider="nope").key_env == "ZAI_API_KEY"
+
+
 def test_ask_without_key_explains_setup(monkeypatch):
     monkeypatch.delenv("ZAI_API_KEY", raising=False)
     with pytest.raises(AnalystError, match="ZAI_API_KEY"):
@@ -109,7 +132,7 @@ def test_ask_rejects_empty_question_and_no_items():
 
 class _FakeRadar:
     config = SimpleNamespace(translate_enabled=False, translate_target="ar",
-                             ai_base_url="https://api.z.ai/api/paas/v4", ai_model="glm-5.3-flash",
+                             ai_provider="zai", ai_base_url="", ai_model="",
                              ai_reasoning_effort="low")
     sources = ["github"]
 
@@ -127,7 +150,10 @@ def _client():
 def test_ask_status_reports_configuration(monkeypatch):
     monkeypatch.delenv("ZAI_API_KEY", raising=False)
     data = _client().get("/api/ask/status").json()
-    assert data == {"configured": False, "model": "glm-5.3-flash", "key_env": "ZAI_API_KEY"}
+    assert data["configured"] is False
+    assert data["model"] == "glm-5.3-flash"
+    assert data["provider"] == "Z.AI"
+    assert data["key_env"] == "ZAI_API_KEY"
 
 
 def test_ask_endpoint_without_key_returns_503(monkeypatch):

@@ -165,9 +165,15 @@ def create_app(radar=None, host: str = "127.0.0.1", port: int = 8765) -> "FastAP
     @app.get("/api/ask/status")
     async def api_ask_status():
         """Whether question answering is set up, and which model it uses."""
-        from .analyst import NewsAnalyst, API_KEY_ENV
+        from .analyst import NewsAnalyst
         analyst = NewsAnalyst.from_config(_radar.config)
-        return JSONResponse({"configured": analyst.configured, "model": analyst.model, "key_env": API_KEY_ENV})
+        return JSONResponse({
+            "configured": analyst.configured,
+            "model": analyst.model,
+            "provider": analyst.label,
+            "key_env": analyst.key_env,
+            "key_help": analyst.key_help,
+        })
 
     @app.post("/api/ask")
     def api_ask(payload: dict = Body(...)):
@@ -860,9 +866,10 @@ function qaHtml(entry) {
 function renderAsk() {
   if (!askState) return;
   if (!askState.configured) {
-    $('results').innerHTML = emptyState('Connect a Z.AI API key to ask questions',
-      'Create a pay-as-you-go key in your Z.AI account, then restart the server with it: <code>ZAI_API_KEY=your-key trend-radar serve</code>. ' +
-      'The GLM Coding Plan can’t be used here; Z.AI only allows it inside supported coding tools.');
+    const env = esc(askState.key_env || 'the API key');
+    $('results').innerHTML = emptyState('Connect a ' + esc(askState.provider || 'provider') + ' API key to ask questions',
+      'Get ' + esc(askState.key_help || 'an API key') + ', then restart the server with it: ' +
+      '<code>' + env + '=your-key trend-radar serve</code>.');
     return;
   }
   const src = $('sourceSelect').value;

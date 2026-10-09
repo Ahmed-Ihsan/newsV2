@@ -384,28 +384,38 @@ curl http://localhost:8765/api/ranked
 
 ## 🧠 Ask the News (AI analyst)
 
-Ask questions about the items Trend Radar just collected. A Z.AI GLM model answers using only
+Ask questions about the items Trend Radar just collected. An AI model answers using only
 those items and cites them by number, so every claim links back to a real story.
 
+Two providers are supported. The API key is **never stored in config** — it is read from the
+provider's environment variable, so your key stays out of the repo.
+
 ```bash
-export ZAI_API_KEY=your-key            # a pay-as-you-go key from your Z.AI account
+# Z.AI (default) — a pay-as-you-go key from your Z.AI account
+export ZAI_API_KEY=your-key
+# …or Google Gemini — a key from https://aistudio.google.com/apikey
+export GEMINI_API_KEY=your-key
+
 trend-radar ask "What's new in AI agents?"
 trend-radar ask "Which repos are trending for Rust?" --sources github
 trend-radar serve                      # then open the Ask view (key 6)
 ```
 
-The GLM Coding Plan can't be used for this; Z.AI only allows it inside supported coding tools.
-Change the model or endpoint in `~/.trend-radar/config.yaml`:
+The Z.AI GLM Coding Plan can't be used for this; Z.AI only allows it inside supported coding
+tools — use a regular pay-as-you-go key.
+
+Choose the provider and model in `~/.trend-radar/config.yaml`:
 
 ```yaml
 ai:
-  base_url: https://api.z.ai/api/paas/v4
-  model: glm-5.3-flash
-  reasoning_effort: low   # low | high | max
+  provider: gemini          # zai | gemini
+  model: gemini-2.5-flash   # blank = the provider's default (glm-5.3-flash / gemini-2.5-flash)
+  reasoning_effort: low     # low | high | max
+  # base_url: ""            # blank = the provider's default endpoint
 ```
 
 API: `POST /api/ask` with `{"question": "...", "sources": "github,hackernews"}`, and
-`GET /api/ask/status` to check whether a key is set.
+`GET /api/ask/status` to check which provider is set and whether a key is present.
 
 ## 🐳 Docker
 
